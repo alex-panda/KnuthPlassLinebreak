@@ -3,53 +3,6 @@ Status: The algorithm works and an example of using the algorithm is finished,
     so I am done working on this module.
 
 A module that implements the Knuth-Plass text formatting algorithm in Python.
-
-Using the Knuth-Plass algorithm, one can beakup text into lines in such a way
-    that each line has "minimum badness" as defined by the algorithm. It also
-    figures out how large each space should be if you want to
-    "FULL" A.K.A. "LEFT-RIGHT" justify the text.
-
-There are 2 main parts to the algorithm:
-    Part 1: Turning your text into a list of Glue, Box, and Penalty objects.
-        This part is crucial as this is where you describe what your paragraph
-        looks like as far as where you can break it up and how large the
-        different components can be.
-
-        A 'paragraph' (which is just a list of Glue, Box, and Penalty objects)
-            is made up of 3 things.
-
-            Glue:    The spaces that can chane width. Have a default width, but
-                can shrink by `shrink` amount and stretch by `stretch` amount.
-
-            Box:     An object of a static width such as a character like 'a',
-                'A', 'b', '1', '2', etc. The algorithm only looks at the width,
-                so could be a picture too, or something else (so long as the
-                width describes the contents of the box). A word in a paragraph
-                is typically described by a sequence of boxes, one for each
-                letter of the word. No space will be put to break up the word
-                unless you specify a Glue or Penalty within the word.
-
-            Penalty: A place where you are specifically talking about whether
-                to break the line or not. You can break in other places, such
-                as between a Box and a Glue, but Penalties let you specify
-                arbitrary points where you can break but incure a Penalty.
-                Obviously, higher penalties are worse penalties. A penalty
-                of INF (infinity) is a place where you cannot break
-                and a penalty of -INF (negative infinity) is a place where you
-                have to have a line break.
-
-                The width of a penalty is the width of the typesetting material
-                (the hyphen ('-') if breaking inside a word) that must be added
-                if you break at this point. Typically, the width is 0.
-
-    Part 2: The actual algorithm that looks at your list of Glue, Box, and
-        Penalty objects and uses them to find the best way break up your
-        paragraph such that the paragraph as a whole has the 'minimum badness',
-        as described by the algorithm itself.
-
-        After the paragraph is broken up into lines, then you can iterate over
-        the Glue, Box, and Penalty objects that makes up each line and justify
-        the resulting line left, middle, right, or full.
 """
 from typing import List, Callable, Union, Dict, Generator
 from collections import namedtuple
