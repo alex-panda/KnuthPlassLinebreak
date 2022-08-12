@@ -24,7 +24,7 @@ def never_break_word(word:str) -> List[str]:
 
 def rigid_greedy_break(
         text:Union[str, List[str]],
-        width:int,
+        line_widths:Callable[[int], int]=lambda _: 100,
         end_line_break_word:Callable[[str], List[str]]=never_break_word,
         empty_line_break_word:Callable[[str], List[str]]=never_break_word,
         hyphen_char:str='-',
@@ -41,9 +41,14 @@ def rigid_greedy_break(
         whitespace, otherwise every string in the given list of strings is assumed
         to be 1 word and no part of it will be changed and/or removed.
 
-    width: The inclusive width to fit the text in i.e. if width = 50 then the
-        max length of any line (with 1 space between the words of the line) will
-        be 50 characters.
+    width: The function to use to get the length of the current line. The line
+        number (0 indexed) is given to the function and the function must return
+        the line's width.
+        
+        Note: The function must eventually return a line number larger than 0
+        or else this method will be stuck in an infinite loop.
+
+        Note: Widths < 0 are considered to have 0 width.
 
     end_line_break_word: Breaks the given word up into a list of substrings at
         feasible breakpoints of the word. For example, "mistletoe" could be
@@ -66,8 +71,6 @@ def rigid_greedy_break(
     hyphen_char: The character(s) to use as hyphens (if want no hyphens, use '',
         if want more than 1 char per hyphen, can use longer string).
     """
-    assert width >= 0, f'Unable To Break Text: The width must be at least 1, not {width}.'
-
     space:Final[Literal[1]] = 1 # constant used instead of magic number
 
     words:List[str] = text.split() if isinstance(text, str) else text
@@ -77,6 +80,13 @@ def rigid_greedy_break(
     curr_line_len:int = 0
 
     hyphen_char_len = len(hyphen_char)
+
+    def width(i:Union[int, None]=None) -> int:
+        """
+        Gets the width for the given line number.
+        """
+        w:int = line_widths(len(lines) if i is None else i)
+        return w if w > 0 else 0
 
     def new_line():
         nonlocal lines
@@ -146,7 +156,7 @@ def rigid_greedy_break(
         if len(curr_line) > 0:
             # There are words already on the current line so try to add to that
             # line
-            space_left = width - (curr_line_len + space)
+            space_left = width(len(lines) + len(next_lines)) - (curr_line_len + space)
 
             try:
                 syl, syls_remaining = next_syl(syls_remaining, space_left)
@@ -173,7 +183,7 @@ def rigid_greedy_break(
 
             # next_syl will raise AssertionError if could not fit a
             # syllable on the line
-            next_syllable, syls_remaining = next_syl(syls_remaining, width)
+            next_syllable, syls_remaining = next_syl(syls_remaining, width(len(lines) + len(next_lines)))
 
             next_lines.append([next_syllable])
 
@@ -201,7 +211,7 @@ def rigid_greedy_break(
         if len(curr_line) == 0:
             # There is nothing else on the current line
 
-            if word_len > width:
+            if word_len > width():
                 # Word itself is too long for the width so put pieces of it onto
                 # line instead
 
@@ -213,13 +223,13 @@ def rigid_greedy_break(
                     # at a time as possible because breaking it into syllables
                     # isn't enough -- have to break it down more
 
-                    if width <= hyphen_char_len:
+                    if width() <= hyphen_char_len:
                         # Not enough width for hyphens so just ignore them and
                         # put as much of the word on each line as possible
                         curr_i = 0
                         word_len = len(word)
                         while curr_i < word_len:
-                            next_i = min(curr_i + width, word_len)
+                            next_i = min(curr_i + width(), word_len)
                             lines.append([word[curr_i:next_i]])
                             curr_i = next_i
                     else:
@@ -227,7 +237,7 @@ def rigid_greedy_break(
 
                         curr:str = word
                         while True:
-                            no_hyphen_width = len(curr) - (len(curr) - width)
+                            no_hyphen_width = len(curr) - (len(curr) - width())
                             with_hyphen_width = no_hyphen_width - hyphen_char_len
                             use_hyphen = False
 
@@ -235,7 +245,7 @@ def rigid_greedy_break(
                             # the current string then fit the rest of the
                             # current string, otherwise fit as much as possible
                             # with a hyphen after it
-                            if no_hyphen_width >= len(curr) and curr_line_len + no_hyphen_width <= width:
+                            if no_hyphen_width >= len(curr) and curr_line_len + no_hyphen_width <= width():
                                 i = min(no_hyphen_width, len(curr))
                             else:
                                 i = with_hyphen_width
@@ -260,7 +270,7 @@ def rigid_greedy_break(
         else:
             # There are other words on the line already
 
-            if curr_line_len + space + word_len > width:
+            if curr_line_len + space + word_len > width():
                 # Cannot add it to the current line as one piece with 1 space
                 # before it so cut it up into syllables
                 try:
@@ -289,28 +299,48 @@ def rigid_greedy_break(
 # =============================================================================
 
 
-def rigid_left_justify(paragraph:List[List[str]], width:int, space_char:str=' ', fill_char:str=' ', line_end:str='\n') -> str:
+def rigid_left_justify(
+        paragraph:List[List[str]],
+        width:Callable[[int], int],
+        space_char:str=' ',
+        fill_char:str=' ',
+        line_end:str='\n'
+    ) -> str:
     """
     Left justifies the given paragraph.
     """
     text = StringIO()
-    for line in paragraph:
+    for i, line in enumerate(paragraph):
         line_str = space_char.join(line)
-        text.write(line_str + (fill_char * (width - len(line_str))) + line_end)
+        text.write(line_str + (fill_char * (width(i) - len(line_str))) + line_end)
     return text.getvalue()
 
 
-def rigid_right_justify(paragraph:List[List[str]], width:int, space_char:str=' ', fill_char:str=' ', line_end:str='\n') -> str:
+def rigid_right_justify(
+        paragraph:List[List[str]],
+        width:Callable[[int], int],
+        space_char:str=' ',
+        fill_char:str=' ',
+        line_end:str='\n'
+    ) -> str:
     """
     Right justifies the given paragraph.
     """
     text = StringIO()
-    for line in paragraph:
+    for i, line in enumerate(paragraph):
         line_str = space_char.join(line)
-        text.write((fill_char * (width - len(line_str))) + line_str + line_end)
+        text.write((fill_char * (width(i) - len(line_str))) + line_str + line_end)
     return text.getvalue()
 
-def rigid_center_justify(paragraph:List[List[str]], width:int, space_char:str=' ', fill_char:str=' ', line_end:str='\n', bias_left:bool=True) -> str:
+
+def rigid_center_justify(
+        paragraph:List[List[str]],
+        width:Callable[[int], int],
+        space_char:str=' ',
+        fill_char:str=' ',
+        line_end:str='\n',
+        bias:Literal['left', 'right', 'random']='left'
+    ) -> str:
     """
     Center justifies the given paragraph.
 
@@ -319,22 +349,35 @@ def rigid_center_justify(paragraph:List[List[str]], width:int, space_char:str=' 
         If not biased right, then the whitespace will be biased left.
     """
     text = StringIO()
-    for line in paragraph:
+    for i, line in enumerate(paragraph):
         line_str = space_char.join(line)
-        fill = (fill_char * (width - len(line_str)))
+        fill = (fill_char * (width(i) - len(line_str)))
 
         # Add fill either biased right or left
-        if bias_left:
-            fill_i = len(fill) // 2
-        else:
-            # bias right
+        if bias == 'right':
             fill_i = math.ceil(len(fill) / 2)
+        elif bias == 'random':
+            if random.randint(0, 1):
+                fill_i = math.ceil(len(fill) / 2)
+            else:
+                fill_i = len(fill) // 2
+        else:
+            # bias left
+            fill_i = len(fill) // 2
 
         text.write(fill[:fill_i] + line_str + fill[fill_i:] + line_end)
     return text.getvalue()
 
 
-def rigid_left_right_justify(paragraph:List[List[str]], width:int, space_char:str=' ', fill_char:str=' ', line_end:str='\n', bias:Literal['left', 'right', 'random', 'true_random']='random') -> str:
+def rigid_full_justify(
+        paragraph:List[List[str]],
+        width:Callable[[int], int],
+        space_char:str=' ', 
+        fill_char:str=' ',
+        line_end:str='\n',
+        bias:Literal['left', 'right', 'random']='random',
+        last_line_justify:Literal['left', 'right', 'center', 'full']='left'
+    ) -> str:
     """
     Left-right justifies the given paragraph.
 
@@ -354,12 +397,12 @@ def rigid_left_right_justify(paragraph:List[List[str]], width:int, space_char:st
 
         if i == len(paragraph) - 1:
             # left-justify last line
-            text.write(rigid_left_justify([line], width, space_char, fill_char, line_end))
+            text.write(rigid_justify([line], lambda _: width(i), last_line_justify, space_char, fill_char, line_end))
         else:
             # not last line so properly left-right justify it
-            fill_len = (width - text_len(line)) # how many fill characters in total there need to be for this line
+            fill_len = max(width(i) - text_len(line), 0) # how many fill characters in total there need to be for this line
             num_positions = len(line) - 1 # positions that can be filled with whitespace
-            start_spaces_per_pos = (fill_len // num_positions)
+            start_spaces_per_pos = (fill_len // max(num_positions, 1))
             positions:List[str] = [space_char * start_spaces_per_pos] * num_positions # the positions of whitespace between words
             fill_len_left = fill_len - (start_spaces_per_pos * num_positions) # how much more length there is to fill
 
@@ -406,20 +449,63 @@ def rigid_left_right_justify(paragraph:List[List[str]], width:int, space_char:st
     return text.getvalue()
 
 
-def rigid_justify(paragraph:List[List[str]], width:int, justify:Literal['left', 'right', 'center', 'justified']='justified', space_char:str=' ', fill_char:str=' ', line_end:str='\n') -> str:
+def rigid_justify(
+        # Params that all justify methods have
+        paragraph:List[List[str]],
+        width:Callable[[int], int],
+        justify:Literal['left', 'right', 'center', 'full']='full',
+        space_char:str=' ',
+        fill_char:str=' ',
+        line_end:str='\n',
+
+        # Params for specific justify methods
+        bias:Literal['left', 'right', 'random']='left',
+        last_line_justiyf:Literal['left', 'right', 'center', 'full']='left',
+    ) -> str:
     """
     Justifies and returns the given paragraph as a string, assuming that it is
         rigid text i.e. every character (including spaces and fill) is 1
         character long.
+    
+    paragraph: The paragraph of words to justify with each line of the paragraph
+        being its own list in the list of lists.
+
+    width: A function that returns the width for the given line number (line
+        numbers are 0-indexed so the first line is line 0).
+
+        Note: Returned widths less than 0 are considered 0.
+
+        Note: The function should eventually return line widths greater than 0
+            or else an infinite loop will be caused.
+
+    justify: What type of justification should be used to justify the text.
+
+    space_char: The character to use as spaces when justifying the given
+        paragraph.
+
+    fill_char: What character to use to fill in extra space i.e. space that is
+        not spaces.
+
+    line_end: The character(s) to use to end each line of text.
+
+    bias: Which way to bias extra space distribution i.e. if there are 5 words,
+        and thus 4 positions for spaces between the words, but the line needs
+        7 spaces to reach the desired line width, how should the extra 3 spaces
+        be distributed? bias='left' means that they should be added to the
+        positions from left to right, meaning left positions get more whitespace
+        than right positions; bias='right' means that whitespace should be
+        added from right to left so right positions get more whitespace than
+        left positions; and bias='random' means that the extra whitespace should
+        be randomly distributed among the positions.
     """
     if   justify == 'left':
         return rigid_left_justify(paragraph, width, space_char, fill_char, line_end)
     elif justify == 'right':
         return rigid_right_justify(paragraph, width, space_char, fill_char, line_end)
     elif justify == 'center':
-        return rigid_center_justify(paragraph, width, space_char, fill_char, line_end)
-    elif justify == 'justified':
-        return rigid_left_right_justify(paragraph, width, space_char, fill_char, line_end)
+        return rigid_center_justify(paragraph, width, space_char, fill_char, line_end, bias)
+    elif justify == 'full':
+        return rigid_full_justify(paragraph, width, space_char, fill_char, line_end, bias, last_line_justiyf)
     else:
         raise AssertionError(f'Illegal Format Error: justify="{justify}" is an unknown justification option')
 
@@ -463,7 +549,12 @@ def main():
 
         return out
 
-    width = 100
+    def width(i:int) -> int:
+        if i % 8 < 4:
+            return 100
+        else:
+            return 50
+
     space_char = ' '
     fill_char = ' '
     par = rigid_greedy_break(test_text, width, rand_syl_sep, rand_syl_sep, '-')
@@ -491,8 +582,8 @@ def main():
     max_len(res)
     print(res)
 
-    res = rigid_left_right_justify(par, width, space_char=space_char, fill_char=fill_char, bias='random')
-    print('\nLeft-Right Justified:\n')
+    res = rigid_full_justify(par, width, space_char=space_char, fill_char=fill_char, bias='random')
+    print('\nFull (Left-Right) Justified:\n')
     max_len(res)
     print(res)
 
